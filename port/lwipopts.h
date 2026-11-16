@@ -654,5 +654,28 @@ The STM32F107 allows computing and verifying the IP, UDP, TCP and ICMP checksums
 /* RX buffers are allocated from the heap */
 #define PBUF_RAM_RX PBUF_RAM
 
+/*
+ * DHCP DISCOVER back-off (0.5, 0.5, 1, 2, 4, 8, 15 s instead of 2, 4, 8, 16, 32, 60 s).
+ * On Wi-Fi the first DISCOVER/OFFER is easily lost, especially when the AP sends
+ * the OFFER as a broadcast at weak RSSI - same as BK_DHCP in the ARMINO lwIP core.
+ * All other timeouts are the lwIP defaults (core/ipv4/dhcp.c).
+ */
+#define DHCP_DEFINE_CUSTOM_TIMEOUTS 1
+#define SET_TIMEOUT_FROM_OFFERED(result, offered, min, max) do { \
+  u32_t timeout = (offered + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS; \
+  if (timeout > max) { \
+    timeout = max; \
+  } \
+  if (timeout == min) { \
+    timeout = 1; \
+  } \
+  result = (dhcp_timeout_t)timeout; \
+} while(0)
+#define DHCP_SET_TIMEOUT_FROM_OFFERED_T0_LEASE(res, dhcp)  SET_TIMEOUT_FROM_OFFERED(res, (dhcp)->offered_t0_lease, 0, 0xffff)
+#define DHCP_SET_TIMEOUT_FROM_OFFERED_T1_RENEW(res, dhcp)  SET_TIMEOUT_FROM_OFFERED(res, (dhcp)->offered_t1_renew, 0, 0xffff)
+#define DHCP_SET_TIMEOUT_FROM_OFFERED_T2_REBIND(res, dhcp) SET_TIMEOUT_FROM_OFFERED(res, (dhcp)->offered_t2_rebind, 0, 0xffff)
+#define DHCP_NEXT_TIMEOUT_THRESHOLD ((60 + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS)
+#define DHCP_REQUEST_BACKOFF_SEQUENCE(tries) (u16_t)(((tries) < 6 ? 1 << (tries) : 60) * 250)
+
 #endif /* __LWIPOPTS_H__ */
 
