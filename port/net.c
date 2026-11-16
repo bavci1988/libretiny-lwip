@@ -39,6 +39,9 @@
 #include "bk_ef.h"
 #endif
 
+/* DNS server for fast DHCP; ARMINO keeps it in a vendor field of struct netif */
+static u32_t sta_netif_dns1 = 0;
+
 /* forward declaration */
 FUNC_1PARAM_PTR bk_wlan_get_status_cb(void);
 
@@ -262,7 +265,7 @@ static void wm_netif_status_static_callback(struct netif *n)
 				ip_addr_set_ip4_u32(&n->ip_addr, *((u32 *)&fci.ip_addr));
 				ip_addr_set_ip4_u32(&n->netmask, *((u32 *)&fci.netmask));
 				ip_addr_set_ip4_u32(&n->gw, *((u32 *)&fci.gw));
-				os_memcpy((char *)&n->dns1, (char *)&fci.dns1, sizeof(n->dns1));
+				os_memcpy((char *)&sta_netif_dns1, (char *)&fci.dns1, sizeof(sta_netif_dns1));
 				LWIP_LOGI("ip_addr: "BK_IP4_FORMAT" \r\n", BK_IP4_STR(ip_addr_get_ip4_u32(&n->ip_addr)));
 			}
 #if !CONFIG_DISABLE_DEPRECIATED_WIFI_API
@@ -338,7 +341,7 @@ static void wm_netif_status_callback(struct netif *n)
 						/* store current IP to flash */
 						const ip_addr_t *dns_server;
 						dns_server = dns_getserver(0);
-						n->dns1 = ip_addr_get_ip4_u32(dns_server);
+						sta_netif_dns1 = ip_addr_get_ip4_u32(dns_server);
 						struct wlan_fast_connect_info fci = { 0 };
 #if CONFIG_EASY_FLASH_FAST_DHCP
 						bk_get_env_enhance("fast_connect_id", (void *)&fci, sizeof(struct wlan_fast_connect_info));
@@ -347,7 +350,7 @@ static void wm_netif_status_callback(struct netif *n)
 						os_memcpy((char *)&fci.ip_addr, (char *)ip_2_ip4(&n->ip_addr), sizeof(fci.ip_addr));
 						os_memcpy((char *)&fci.netmask, (char *)ip_2_ip4(&n->netmask), sizeof(fci.netmask));
 						os_memcpy((char *)&fci.gw, (char *)ip_2_ip4(&n->gw), sizeof(fci.gw));
-						os_memcpy((char *)&fci.dns1, (char *)&n->dns1, sizeof(fci.dns1));
+						os_memcpy((char *)&fci.dns1, (char *)&sta_netif_dns1, sizeof(fci.dns1));
 #if CONFIG_EASY_FLASH_FAST_DHCP
 						bk_set_env_enhance("fast_connect_id", (void *)&fci, sizeof(struct wlan_fast_connect_info));
 #endif
