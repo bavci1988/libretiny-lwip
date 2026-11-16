@@ -34,25 +34,32 @@
 #ifndef __CC_H__
 #define __CC_H__
 
-#include <stdint.h>
-#include <stdio.h>
+#ifdef __cplusplus
+extern "C"{
+#endif
 
+#include <common/bk_typedef.h>
+#include "bk_uart.h"
+
+#define LWIP_NO_STDINT_H 1
 /*
  *   Typedefs for the types used by lwip -
  *   u8_t, s8_t, u16_t, s16_t, u32_t, s32_t, mem_ptr_t
  */
-typedef unsigned   char    u8_t;      /* Unsigned 8 bit quantity         */
-typedef signed     char    s8_t;      /* Signed    8 bit quantity        */
-typedef unsigned   short   u16_t;     /* Unsigned 16 bit quantity        */
-typedef signed     short   s16_t;     /* Signed   16 bit quantity        */
-typedef unsigned   long    u32_t;     /* Unsigned 32 bit quantity        */
-typedef signed     long    s32_t;     /* Signed   32 bit quantity        */
-//typedef unsigned   long    mem_ptr_t; /* Unsigned 32 bit quantity        */
+#ifndef LWIP_SIMPLE_TYPES
+#define LWIP_SIMPLE_TYPES 1
+typedef uint8_t   u8_t;
+typedef int8_t    s8_t;
+typedef uint16_t  u16_t;
+typedef int16_t   s16_t;
+typedef uint32_t  u32_t;
+typedef int32_t   s32_t;
+#endif 
+
 typedef int			       intptr_t;
 typedef unsigned int       uintptr_t;
 typedef int sys_prot_t;
-
-
+typedef uintptr_t mem_ptr_t;
 
 #if defined(__GNUC__)
  #define PACK_STRUCT_BEGIN
@@ -79,12 +86,12 @@ typedef int sys_prot_t;
 #ifndef LWIP_PLATFORM_ASSERT
 #define LWIP_PLATFORM_ASSERT(x) \
     do \
-    {   printf("Assertion \"%s\" failed at line %d in %s\n", x, __LINE__, __FILE__); \
+    {   fatal_prf("Assertion \"%s\" failed at line %d in %s\n", x, __LINE__, __FILE__); \
     } while(0)
 #endif
 
 #ifndef LWIP_PLATFORM_DIAG
-#define LWIP_PLATFORM_DIAG(x) do {printf x ;} while(0)
+#define LWIP_PLATFORM_DIAG(x) do {fatal_prf x ;} while(0)
 #endif 
  
 #define U16_F "4d"
@@ -101,10 +108,21 @@ typedef int sys_prot_t;
 #ifndef BYTE_ORDER
 #define BYTE_ORDER          LITTLE_ENDIAN
 #endif
-
+#ifdef CONFIG_TRNG_SUPPORT
 extern int bk_rand();		/* FIXME: move to right place */
 
+#ifndef LWIP_RAND
 #define LWIP_RAND()        ((uint32_t)bk_rand())
+#endif
+#else
+extern int rand();
+#ifndef LWIP_RAND
+#define LWIP_RAND()        (rand())
+#endif
+#endif
+#endif
+#ifdef __cplusplus
+}
 #endif
 // eof
 

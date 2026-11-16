@@ -32,7 +32,10 @@
 #ifndef __LWIPOPTS_H__
 #define __LWIPOPTS_H__
 
-#include "sys_config.h"
+#include <common/sys_config.h>
+#include <components/log.h>
+
+
 
 /**
  * Loopback demo related options.
@@ -42,17 +45,49 @@
 #define LWIP_NETIF_LOOPBACK_MULTITHREADING       1
 #define LWIP_LOOPBACK_MAX_PBUFS         8
 
+/* Define IP_FORWARD to 1 if you wish to have the ability to forward
+   IP packets across network interfaces. If you are going to run lwIP
+   on a device with only one network interface, define this to 0. */
+#ifdef CONFIG_IP_FORWARD
+#define IP_FORWARD                      1
+#else
+#define IP_FORWARD                      0
+#endif
+
+#ifdef CONFIG_IP_NAPT
+#define IP_NAPT                         1
+#else
+#define IP_NAPT                         0
+#endif
+
 #define TCPIP_THREAD_NAME               "tcp/ip"
+#ifdef CONFIG_KEYVALUE
+#define TCPIP_THREAD_STACKSIZE          1024
+#else
 #define TCPIP_THREAD_STACKSIZE          512
+#endif
+
+#if CONFIG_LITEOS_M
 #define TCPIP_THREAD_PRIO               7
+#else
+#define TCPIP_THREAD_PRIO               2
+#endif
 
 #define DEFAULT_THREAD_STACKSIZE        200
+#if CONFIG_LITEOS_M
 #define DEFAULT_THREAD_PRIO             1
+#else
+#define DEFAULT_THREAD_PRIO             8
+#endif
 
 /* Disable lwIP asserts */
 #define LWIP_NOASSERT			        1
 
+#if CONFIG_AGORA_IOT_SDK
+#define LWIP_DEBUG                      1
+#else
 #define LWIP_DEBUG                      0
+#endif
 #define LWIP_DEBUG_TRACE                0
 #define SOCKETS_DEBUG                   LWIP_DBG_OFF
 #define IP_DEBUG                        LWIP_DBG_OFF
@@ -87,6 +122,8 @@
 #define SNMP_MSG_DEBUG                  LWIP_DBG_OFF
 #define SNMP_MIB_DEBUG                  LWIP_DBG_OFF
 #define DNS_DEBUG                       LWIP_DBG_OFF
+#define IP6_DEBUG                       LWIP_DBG_OFF
+#define MDNS_DEBUG                      LWIP_DBG_OFF
 
 //#define LWIP_COMPAT_MUTEX      		    1
 /**
@@ -96,12 +133,13 @@
  */
 #define SYS_LIGHTWEIGHT_PROT            1
 
+#define BK_LWIP                     1
+
 /*
    ------------------------------------
    ---------- Memory options ----------
    ------------------------------------
 */
-
 /**
  * MEM_ALIGNMENT: should be set to the alignment of the CPU
  *    4 byte alignment -> #define MEM_ALIGNMENT 4
@@ -109,9 +147,37 @@
  */
 #define MEM_ALIGNMENT                   4
 
-#define MAX_SOCKETS_TCP 12
+/**
+ * MEM_LIBC_MALLOC==1: Use malloc/free/realloc provided by your C-library
+ * instead of the lwip internal allocator. Can save code size if you
+ * already use it.
+ */
+#define MEM_LIBC_MALLOC                  CONFIG_LWIP_MEM_LIBC_MALLOC
+
+/**
+ * MEMP_MEM_MALLOC==1: Use mem_malloc/mem_free instead of the lwip pool allocator.
+ * Especially useful with MEM_LIBC_MALLOC but handle with care regarding execution
+ * speed and usage from interrupts!
+ */
+#define MEMP_MEM_MALLOC                  CONFIG_LWIP_MEMP_MEM_MALLOC
+
+/*
+ * Enable dynamic TX/RX buffer allocation strategy.
+ * mem_malloc() will return NULL if the used size is greater than threshold of TX
+ * or RX even the remain memory is not empty, it could reserve some
+ * necessary memory to maintence the basic function such as receiving
+ * TCP ACK on TCP upload scenario or transmitting TCP ACK on TCP
+ * download scenario
+ */
+#define MEM_TRX_DYNAMIC_EN               CONFIG_LWIP_MEM_TRX_DYNAMIC_EN
+
+#define MEMP_STATS                       CONFIG_LWIP_MEMP_STATS
+#define MEM_STATS                        CONFIG_LWIP_MEM_STATS
+
+
+#define MAX_SOCKETS_TCP 8
 #define MAX_LISTENING_SOCKETS_TCP 4
-#define MAX_SOCKETS_UDP 22
+#define MAX_SOCKETS_UDP 8
 #define TCP_SND_BUF_COUNT 5
 
 /* Value of TCP_SND_BUF_COUNT denotes the number of buffers and is set by
@@ -134,12 +200,53 @@
  * MEM_SIZE: the size of the heap memory. If the application will send
  * a lot of data that needs to be copied, this should be set high.
  */
-#if ((defined(CFG_LWIP_MEM_POLICY))&&(CFG_LWIP_MEM_POLICY == LWIP_REDUCE_THE_PLAN))
-#define MEM_SIZE (16*1024)
-#else
-#define MEM_SIZE (32*1024)
-#endif
+//#if (MEM_TRX_DYNAMIC_EN)
+#define MEM_SIZE                        CONFIG_LWIP_MEM_SIZE  //(50*1024)
+#define MEM_MAX_TX_SIZE                 CONFIG_LWIP_MEM_MAX_TX_SIZE  //(MEM_SIZE*5)/6
+#define MEM_MAX_RX_SIZE                 CONFIG_LWIP_MEM_MAX_RX_SIZE  //(MEM_SIZE*3)/4
+//#else
+//#if (CONFIG_LWIP_MEM_REDUCE)
+//#define MEM_SIZE (32*1024)
+//#else
+//#define MEM_SIZE (48*1024)
+//#endif //CONFIG_LWIP_MEM_REDUCE
+//#endif //MEM_TRX_DYNAMIC_EN
 
+/* NAPT options */
+#if 0 //IP_NAPT
+static int random_mock = -1;
+/* Mock the esp-random to return 0 for easier result checking */
+uint32_t beken_random(void)
+{
+  if (random_mock == -1) {
+    /* fall back to default "port/unix" rand (if other tests are launched with IP_NAPT ON) */
+    return rand();
+  }
+  return random_mock;
+}
+
+#define IP_NAPT_MAX                     16
+#define LWIP_RAND() (beken_random())
+#include "lwip/arch.h"
+u32_t beken_random(void);
+#endif /* IP_NAPT */
+
+/* ---------- IP options ---------- */
+#define BK_DNS			1
+#define LWIP_SIOCOUTQ                  1
+
+#if CONFIG_AGORA_IOT_SDK
+#define LWIP_TCPIP_CORE_LOCKING         1
+/**
+ * LWIP_TCPIP_CORE_LOCKING_INPUT: when LWIP_TCPIP_CORE_LOCKING is enabled,
+ * this lets tcpip_input() grab the mutex for input packets as well,
+ * instead of allocating a message and passing it to tcpip_thread.
+ *
+ * ATTENTION: this does not work when tcpip_input() is called from
+ * interrupt context!
+ */
+#define LWIP_TCPIP_CORE_LOCKING_INPUT 1
+#endif
 
 /*
    ------------------------------------------------
@@ -169,25 +276,27 @@
 
 /**
  * MEMP_NUM_TCPIP_MSG_INPKT: the number of struct tcpip_msg, which are used
- * for incoming packets. 
+ * for incoming packets.
  * (only needed if you use tcpip.c)
  */
 
-#define MEMP_NUM_TCPIP_MSG_INPKT        16
+#define MEMP_NUM_TCPIP_MSG_INPKT        32   //default 16
 
 /**
  * MEMP_NUM_SYS_TIMEOUT: the number of simulateously active timeouts.
  * (requires NO_SYS==0)
  */
-#define MEMP_NUM_SYS_TIMEOUT            LWIP_NUM_SYS_TIMEOUT_INTERNAL + 10
+#define MEMP_NUM_SYS_TIMEOUT            12
 
 /**
  * MEMP_NUM_NETBUF: the number of struct netbufs.
  * (only needed if you use the sequential API, like api_lib.c)
  */
-
-#define MEMP_NUM_NETBUF                 16
-
+//#if (MEM_TRX_DYNAMIC_EN)
+#define MEMP_NUM_NETBUF                 CONFIG_LWIP_MEMP_NUM_NETBUF//32
+//#else
+//#define MEMP_NUM_NETBUF                 16
+//#endif
 /**
  * MEMP_NUM_NETCONN: the number of struct netconns.
  * (only needed if you use the sequential API, like api_lib.c)
@@ -204,11 +313,11 @@
 /**
  * PBUF_POOL_SIZE: the number of buffers in the pbuf pool.
  */
-#if ((defined(CFG_LWIP_MEM_POLICY))&&(CFG_LWIP_MEM_POLICY == LWIP_REDUCE_THE_PLAN))
-#define PBUF_POOL_SIZE                  3
-#else
-#define PBUF_POOL_SIZE                  10
-#endif
+//#if (MEM_TRX_DYNAMIC_EN)
+#define PBUF_POOL_SIZE                  CONFIG_LWIP_PBUF_POOL_SIZE//10
+//#else
+//#define PBUF_POOL_SIZE                  20
+//#endif
 
 /*
    ----------------------------------
@@ -221,7 +330,15 @@
  * designed to accomodate single full size TCP frame in one pbuf, including
  * TCP_MSS, IP header, and link header.
  */
+#if CONFIG_WIFI6_CODE_STACK
+#define PBUF_LINK_ENCAPSULATION_HLEN    CONFIG_MSDU_RESV_HEAD_LENGTH
+#if CONFIG_LWIP_RESV_TLEN_ENABLE
+#define PBUF_LINK_ENCAPSULATION_TLEN    CONFIG_MSDU_RESV_TAIL_LENGTH
+#endif
+#define PBUF_POOL_BUFSIZE               (1580 + PBUF_LINK_ENCAPSULATION_HLEN)
+#else
 #define PBUF_POOL_BUFSIZE               1580
+#endif
 
 
 /*
@@ -233,7 +350,6 @@
  * LWIP_RAW==1: Enable application layer to hook into the IP layer itself.
  */
 #define LWIP_RAW                        1
-#define LWIP_IPV4                       1
 #ifdef CONFIG_IPV6
 #define LWIP_IPV6                        1
 #endif
@@ -243,6 +359,19 @@
 #define LWIP_AUTOIP                     1
 #define LWIP_DHCP_AUTOIP_COOP           1
 #define LWIP_DHCP_AUTOIP_COOP_TRIES		5
+#endif
+
+
+/* Enable MDNS	*/
+#ifdef CONFIG_MDNS
+#define LWIP_MDNS_RESPONDER             1
+#define LWIP_NUM_NETIF_CLIENT_DATA      (LWIP_MDNS_RESPONDER)
+#endif
+
+#if CONFIG_BRIDGE
+#if !defined LWIP_NUM_NETIF_CLIENT_DATA
+#define LWIP_NUM_NETIF_CLIENT_DATA      3
+#endif
 #endif
 
 /*
@@ -284,7 +413,7 @@
 /**
  * LWIP_STATS_DISPLAY==1: Compile in the statistics output functions.
  */
-#define LWIP_STATS_DISPLAY              0
+#define LWIP_STATS_DISPLAY              1
 
 /*
    ----------------------------------
@@ -304,7 +433,7 @@
 #define DNS_TABLE_SIZE                  2  // number of table entries, default 4
 //#define DNS_MAX_NAME_LENGTH           64  // max. name length, default 256
 #define DNS_MAX_SERVERS                 2  // number of DNS servers, default 2
-#define DNS_DOES_NAME_CHECK             1  // compare received name with given,def 0 
+#define DNS_DOES_NAME_CHECK             1  // compare received name with given,def 0
 #define DNS_MSG_SIZE                    512
 #define MDNS_MSG_SIZE                   512
 #define MDNS_TABLE_SIZE                 1  // number of mDNS table entries
@@ -327,6 +456,12 @@
 #define LWIP_IGMP                       1
 
 /**
+ * LWIP_SO_CONTIMEO==1: Enable send timeout for sockets/netconns and
+ * SO_CONTIMEO processing.
+ */
+#define LWIP_SO_CONTIMEO                1
+
+/**
  * LWIP_SO_SNDTIMEO==1: Enable send timeout for sockets/netconns and
  * SO_SNDTIMEO processing.
  */
@@ -337,16 +472,28 @@
  * SO_RCVTIMEO processing.
  */
 #define LWIP_SO_RCVTIMEO                1
-#define LWIP_SO_SNDTIMEO                1
+
+#define LWIP_SO_LINGER				1
+
 /**
  * TCP_LISTEN_BACKLOG==1: Handle backlog connections.
  */
+#if CONFIG_AGORA_IOT_SDK
+//#define TCP_LISTEN_BACKLOG		        1
+#else
 #define TCP_LISTEN_BACKLOG		        1
-#define LWIP_PROVIDE_ERRNO		        1 
+#endif
+#define LWIP_PROVIDE_ERRNO		        1
 
+#if CONFIG_AGORA_IOT_SDK
+//#include <errno.h>
+//#define ERRNO				            1
+
+#include "sys/errno.h"
+#else
 #include <errno.h>
 #define ERRNO				            1
-
+#endif
 //#define LWIP_SNMP 1
 
 
@@ -398,58 +545,75 @@ The STM32F107 allows computing and verifying the IP, UDP, TCP and ICMP checksums
   #define CHECKSUM_CHECK_TCP              1
 #endif
 
+#if CONFIG_ETH
+/* Enable Checksum Per Interface, ETH has HW csum module */
+#define LWIP_CHECKSUM_CTRL_PER_NETIF      1
+#endif
+
 /**
  * TCP_RESOURCE_FAIL_RETRY_LIMIT: limit for retrying sending of tcp segment
  * on resource failure error returned by driver.
  */
 #define TCP_RESOURCE_FAIL_RETRY_LIMIT     50
 
+#define LWIP_TCP_SACK_OUT               CONFIG_LWIP_TCP_SACK_OUT
+
 //#ifdef CONFIG_ENABLE_MXCHIP
 /* save memory */
-#if ((defined(CFG_LWIP_MEM_POLICY))&&(CFG_LWIP_MEM_POLICY == LWIP_REDUCE_THE_PLAN))
-#define TCP_MSS                 (1500 - 40)
+//#if (CONFIG_LWIP_MEM_REDUCE)
+#define TCP_MSS                 CONFIG_LWIP_TCP_MSS //(1500 - 40)
 /* TCP receive window. */
-#define TCP_WND                 (3 * TCP_MSS)
+#define TCP_WND                 CONFIG_LWIP_TCP_WND //(20*TCP_MSS)
 /* TCP sender buffer space (bytes). */
-#define TCP_SND_BUF             (10*TCP_MSS)
+#define TCP_SND_BUF             CONFIG_LWIP_TCP_SND_BUF //(20*TCP_MSS)
 
-#define TCP_SND_QUEUELEN        (20)
-#else
-#define TCP_MSS                 (1500 - 40)
+#define TCP_SND_QUEUELEN        CONFIG_LWIP_TCP_SND_QUEUELEN//(40)
+//#else
+//#define TCP_MSS                 (1500 - 40)
 /* TCP receive window. */
-#define TCP_WND                 (10*TCP_MSS)
+//#define TCP_WND                 (10*TCP_MSS)
 /* TCP sender buffer space (bytes). */
-#define TCP_SND_BUF             (10*TCP_MSS)
+//#define TCP_SND_BUF             (10*TCP_MSS)
 
-#define TCP_SND_QUEUELEN        (20)
-#endif
+//#define TCP_SND_QUEUELEN        (20)
+//#endif
 
 /* ARP before DHCP causes multi-second delay  - turn it off */
 #define DHCP_DOES_ARP_CHECK            (0)
 
 #define TCP_MAX_ACCEPT_CONN 5
-#define MEMP_NUM_TCP_SEG               (TCP_SND_QUEUELEN*2)
+#define MEMP_NUM_TCP_SEG               CONFIG_LWIP_MEMP_NUM_TCP_SEG//(TCP_SND_QUEUELEN*2)
 
-#define IP_REASS_MAX_PBUFS              0
-#define IP_REASSEMBLY                   0
-#define IP_REASS_MAX_PBUFS              0
-#define IP_REASSEMBLY                   0
-#define MEMP_NUM_REASSDATA              0
-#define IP_FRAG                         0
 
-#define MEM_LIBC_MALLOC                (0)
+//#if (CONFIG_LWIP_MEM_REDUCE)
+#define DEFAULT_UDP_RECVMBOX_SIZE       CONFIG_LWIP_UDP_RECVMBOX_SIZE  // //each udp socket max buffer 24 packets.
+//#else
+//#define DEFAULT_UDP_RECVMBOX_SIZE       16 //each udp socket max buffer 16 packets.
+//#endif
 
-#define DEFAULT_UDP_RECVMBOX_SIZE       3 //each udp socket max buffer 3 packets.
+ /**
+  * TCP_SYNMAXRTX: Maximum number of retransmissions of SYN segments.
+  */
+#define TCP_SYNMAXRTX                   CONFIG_LWIP_TCP_SYNMAXRTX
 
-#define MEMP_MEM_MALLOC (0)
+/**
+ * LWIP_TCP_RTO_TIMEOUT: tcp rto time.
+ * Default is 3 second.
+ */
+#define LWIP_TCP_RTO_TIMEOUT            CONFIG_LWIP_TCP_RTO_TIMEOUT
+
+/**
+ * TCP_QUEUE_OOSEQ==1: TCP will queue segments that arrive out of order.
+ * Define to 0 if your device is low on memory.
+ */
+
+#define TCP_QUEUE_OOSEQ                 CONFIG_LWIP_TCP_QUEUE_OOSEQ
+
 #define TCP_MSL (TCP_TMR_INTERVAL)
 
 #define LWIP_COMPAT_MUTEX_ALLOWED       (1)
 
-#define MEMP_STATS                       1
-#define MEM_STATS                        1
-
-#define LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS
+// #define LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS
 
 #define ETHARP_SUPPORT_STATIC_ENTRIES   1
 
@@ -457,6 +621,24 @@ The STM32F107 allows computing and verifying the IP, UDP, TCP and ICMP checksums
 
 /* Beken specific LWIP options */
 #define BK_DHCP                         1
+
+#define LWIP_TAG "lwip"
+#define LWIP_LOGI(...) BK_LOGI(LWIP_TAG, ##__VA_ARGS__)
+#define LWIP_LOGW(...) BK_LOGW(LWIP_TAG, ##__VA_ARGS__)
+#define LWIP_LOGE(...) BK_LOGE(LWIP_TAG, ##__VA_ARGS__)
+#define LWIP_LOGD(...) BK_LOGD(LWIP_TAG, ##__VA_ARGS__)
+#if 0
+#define LWIP_HOOK_FILENAME              "lwip_hooks.h"
+#define LWIP_HOOK_IP4_ROUTE_SRC         ip4_route_src_hook
+#endif
+#define BK_IP4_ROUTE                    1
+#define BK_DHCPS_DNS                    1
+
+#if CONFIG_FREERTOS
+#define LWIP_NETCONN_SEM_PER_THREAD 1
+#define LWIP_NETCONN_FULLDUPLEX 1
+#define BK_LWIP_DEBUG 1
+#endif
 
 #endif /* __LWIPOPTS_H__ */
 

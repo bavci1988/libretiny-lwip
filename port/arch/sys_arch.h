@@ -32,29 +32,33 @@
 #ifndef __SYS_RTXC_H__
 #define __SYS_RTXC_H__
 
-#include <FreeRTOS.h>
-#include <queue.h>
-#include <semphr.h>
-#include <task.h>
+#include "sys_rtos.h"
 
-#define SYS_MBOX_NULL (xQueueHandle)0
-#define SYS_SEM_NULL  (xSemaphoreHandle)0
-#define SYS_DEFAULT_THREAD_STACK_DEPTH	configMINIMAL_STACK_SIZE
+#define SYS_MBOX_NULL (beken_queue_t)0
+#define SYS_SEM_NULL  (beken_semaphore_t)0
+#define SYS_DEFAULT_THREAD_STACK_DEPTH	256
 
-typedef xSemaphoreHandle sys_sem_t;
-typedef xQueueHandle sys_mbox_t;
-typedef xTaskHandle sys_thread_t;
-typedef void * sys_mutex_t;
+typedef beken_mutex_t sys_mutex_t;
+typedef beken_semaphore_t sys_sem_t;
+typedef beken_queue_t sys_mbox_t;
+typedef beken_thread_t sys_thread_t;
 
 typedef struct _sys_arch_state_t
 {
 	// Task creation data.
-	char cTaskName[configMAX_TASK_NAME_LEN];
+	char cTaskName[16];
 	unsigned short nStackDepth;
 	unsigned short nTaskCount;
 } sys_arch_state_t;
 
 /* Message queue constants. */
 #define archMESG_QUEUE_LENGTH	( 32 )
+
+#if CONFIG_FREERTOS
+sys_sem_t* sys_thread_sem_get(void);
+sys_sem_t* sys_thread_sem_init(void);
+void sys_thread_sem_deinit(void);
+#endif
+
 #endif /* __SYS_RTXC_H__ */
 
