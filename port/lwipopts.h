@@ -171,6 +171,10 @@
  * download scenario
  */
 #define MEM_TRX_DYNAMIC_EN               CONFIG_LWIP_MEM_TRX_DYNAMIC_EN
+#if MEM_TRX_DYNAMIC_EN
+/* RX/TX buffers are allocated from the heap, not from PBUF_POOL (TCP_WND check) */
+#define LWIP_DISABLE_TCP_SANITY_CHECKS   1
+#endif
 
 #define MEMP_STATS                       CONFIG_LWIP_MEMP_STATS
 #define MEM_STATS                        CONFIG_LWIP_MEM_STATS
@@ -656,6 +660,16 @@ uint16_t hw_ipcksum_standard_chksum(const void *dataptr, int len);
 #define LWIP_CHKSUM hw_ipcksum_standard_chksum
 #define LWIP_CHKSUM_ALGORITHM 2
 #endif
+
+/*
+ * Extensions of the ARMINO lwIP core used by the Wi-Fi driver
+ * (components/bk_wifi), mapped onto upstream lwIP.
+ */
+#ifndef ETHTYPE_EAPOL
+#define ETHTYPE_EAPOL 0x888EU
+#endif
+/* RX buffers are allocated from the heap */
+#define PBUF_RAM_RX PBUF_RAM
 
 #endif /* __LWIPOPTS_H__ */
 

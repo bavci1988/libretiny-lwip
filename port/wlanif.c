@@ -440,3 +440,55 @@ err_t lwip_netif_uap_init(struct netif *netif)
 }
 
 // eof
+
+#if CONFIG_WIFI6_CODE_STACK
+#include "lwip/etharp.h"
+#include "lwip/prot/etharp.h"
+#include "lwip/prot/iana.h"
+#include "net.h"
+#include "netif/ethernet.h"
+
+/* the next frame is sent with bmsg_special_tx_sender() (low_level_output) */
+bool special_arp_flag = false;
+
+/*
+ * Send an ARP reply to the gateway, or an ARP request if it is not cached yet.
+ * ARMINO implements this inside the lwIP core (core/ipv4/etharp.c); this is
+ * the same behaviour built on the public lwIP API.
+ */
+void etharp_reply(void)
+{
+	struct netif *netif = (struct netif *)net_get_sta_handle();
+	struct eth_addr *gw_mac;
+	const ip4_addr_t *gw_ip;
+	struct etharp_hdr *hdr;
+	struct pbuf *p;
+
+	if (!netif || ip4_addr_isany_val(*netif_ip4_gw(netif)))
+		return;
+
+	special_arp_flag = true;
+	if (etharp_find_addr(netif, netif_ip4_gw(netif), &gw_mac, &gw_ip) < 0) {
+		etharp_request(netif, netif_ip4_gw(netif));
+		return;
+	}
+
+	p = pbuf_alloc(PBUF_LINK, SIZEOF_ETHARP_HDR, PBUF_RAM);
+	if (!p) {
+		special_arp_flag = false;
+		return;
+	}
+	hdr = (struct etharp_hdr *)p->payload;
+	hdr->hwtype = PP_HTONS(LWIP_IANA_HWTYPE_ETHERNET);
+	hdr->proto = PP_HTONS(ETHTYPE_IP);
+	hdr->hwlen = ETH_HWADDR_LEN;
+	hdr->protolen = sizeof(ip4_addr_t);
+	hdr->opcode = lwip_htons(ARP_REPLY);
+	SMEMCPY(&hdr->shwaddr, netif->hwaddr, ETH_HWADDR_LEN);
+	SMEMCPY(&hdr->dhwaddr, gw_mac, ETH_HWADDR_LEN);
+	IPADDR_WORDALIGNED_COPY_FROM_IP4_ADDR_T(&hdr->sipaddr, netif_ip4_addr(netif));
+	IPADDR_WORDALIGNED_COPY_FROM_IP4_ADDR_T(&hdr->dipaddr, gw_ip);
+	ethernet_output(netif, p, (struct eth_addr *)netif->hwaddr, gw_mac, ETHTYPE_ARP);
+	pbuf_free(p);
+}
+#endif

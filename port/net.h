@@ -45,6 +45,11 @@ extern void *net_get_br_handle(void);
 }
 #endif
 
+#if CONFIG_WIFI6_CODE_STACK
+/* send an ARP reply to the gateway (wlanif.c) */
+void etharp_reply(void);
+#endif
+
 #endif // _NET_H_
 // eof
 

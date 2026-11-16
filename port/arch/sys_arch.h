@@ -60,5 +60,12 @@ sys_sem_t* sys_thread_sem_init(void);
 void sys_thread_sem_deinit(void);
 #endif
 
+#if LWIP_NETCONN_SEM_PER_THREAD
+/* upstream lwIP expects the port to provide these (sys_arch.c) */
+#define LWIP_NETCONN_THREAD_SEM_GET()   sys_thread_sem_get()
+#define LWIP_NETCONN_THREAD_SEM_ALLOC() sys_thread_sem_init()
+#define LWIP_NETCONN_THREAD_SEM_FREE()  sys_thread_sem_deinit()
+#endif
+
 #endif /* __SYS_RTXC_H__ */
 
