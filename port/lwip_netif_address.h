@@ -1,5 +1,6 @@
 #ifndef _MXCHIP_NETIF_ADDR_H_
 #define _MXCHIP_NETIF_ADDR_H_
+#include <lwip/ip_addr.h>
 
 /** MLAN BSS type */
 typedef enum _wifi_interface_type
@@ -10,6 +11,7 @@ typedef enum _wifi_interface_type
     WIFI_INTERFACE_TYPE_ANY = 0xff,
 } wifi_interface_type;
 
+#define ADDR_TYPE_FAST_DHCP   2
 #define ADDR_TYPE_STATIC 1
 #define ADDR_TYPE_DHCP   0
 
@@ -29,17 +31,17 @@ struct ipv4_config {
 	unsigned dns2;
 };
 
+
 #ifdef CONFIG_IPV6
-struct ipv6_config
-{
-    /** The system's IPv6 address in network order. */
-    uint32_t addr[4];
-    /** The address type: linklocal, site-local or global. */
-    unsigned char addr_type;
-    /** The state of IPv6 address (Tentative, Preferred, etc). */
-    unsigned char addr_state;
+#define MAX_IPV6_ADDRESSES 3
+struct ipv6_config {
+	ip6_addr_t address;
+	u8 addr_state;
 };
+
 #endif
+
+
 /** Network IP configuration.
  *
  *  This data structure represents the network IP configuration
@@ -49,7 +51,7 @@ struct wlan_ip_config {
 #ifdef CONFIG_IPV6
 	/** The network IPv6 address configuration that should be
 	 * associated with this interface. */
-	struct ipv6_config ipv6[LWIP_IPV6_NUM_ADDRESSES];
+	struct ipv6_config ipv6[MAX_IPV6_ADDRESSES];
 #endif
 	/** The network IPv4 address configuration that should be
 	 * associated with this interface. */
