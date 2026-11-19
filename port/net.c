@@ -403,7 +403,7 @@ wm_netif_ipv6_status_callback(struct netif *netif, netif_nsc_reason_t reason, co
 			/* store current IP to flash */
 			const ip_addr_t *dns_server;
 			dns_server = dns_getserver(0);
-			netif->dns1 = ip_addr_get_ip4_u32(dns_server);
+			sta_netif_dns1 = ip_addr_get_ip4_u32(dns_server);
 			struct wlan_fast_connect_info fci = { 0 };
 #if CONFIG_EASY_FLASH_FAST_DHCP
 			bk_get_env_enhance("fast_connect_id", (void *)&fci, sizeof(struct wlan_fast_connect_info));
@@ -412,7 +412,7 @@ wm_netif_ipv6_status_callback(struct netif *netif, netif_nsc_reason_t reason, co
 			os_memcpy((char *)&fci.ip_addr, (char *)&netif->ip_addr, sizeof(netif->ip_addr));
 			os_memcpy((char *)&fci.netmask, (char *)&netif->netmask, sizeof(netif->netmask));
 			os_memcpy((char *)&fci.gw, (char *)&netif->gw, sizeof(netif->gw));
-			os_memcpy((char *)&fci.dns1, (char *)&netif->dns1, sizeof(netif->dns1));
+			os_memcpy((char *)&fci.dns1, (char *)&sta_netif_dns1, sizeof(sta_netif_dns1));
 #if CONFIG_EASY_FLASH_FAST_DHCP
 			bk_set_env_enhance("fast_connect_id", (void *)&fci, sizeof(struct wlan_fast_connect_info));
 #endif
