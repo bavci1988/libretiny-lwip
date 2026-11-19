@@ -673,6 +673,8 @@ uint16_t hw_ipcksum_standard_chksum(const void *dataptr, int len);
 #endif
 /* RX buffers are allocated from the heap */
 #define PBUF_RAM_RX PBUF_RAM
+/* receive info of the Wi-Fi driver (rwnx_rx.c), after if_idx as in ARMINO's lwIP */
+#define LWIP_PBUF_CUSTOM_DATA void *extra;
 
 /*
  * DHCP DISCOVER back-off (0.5, 0.5, 1, 2, 4, 8, 15 s instead of 2, 4, 8, 16, 32, 60 s).
