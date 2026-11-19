@@ -1704,8 +1704,11 @@ mdns_handle_tc_question(void *arg)
 {
   struct mdns_packet *pkt = (struct mdns_packet *)arg;
   struct netif *from = netif_get_by_index(pkt->pbuf->if_idx);
-  /* timer as elapsed, now handle this question */
-  mdns_handle_question(pkt, from);
+  /* timer as elapsed, now handle this question
+   * (unless mdns was removed from the netif in the meantime) */
+  if ((from != NULL) && (NETIF_TO_HOST(from) != NULL)) {
+    mdns_handle_question(pkt, from);
+  }
   /* remove from pending list */
   if (pending_tc_questions == pkt) {
     pending_tc_questions = pkt->next_tc_question;
