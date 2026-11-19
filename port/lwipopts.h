@@ -291,7 +291,8 @@ u32_t beken_random(void);
  * MEMP_NUM_SYS_TIMEOUT: the number of simulateously active timeouts.
  * (requires NO_SYS==0)
  */
-#define MEMP_NUM_SYS_TIMEOUT            12
+/* mDNS needs up to 6 timers per netif (station and SoftAP) */
+#define MEMP_NUM_SYS_TIMEOUT            (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 12)
 
 /**
  * MEMP_NUM_NETBUF: the number of struct netbufs.
@@ -673,6 +674,10 @@ uint16_t hw_ipcksum_standard_chksum(const void *dataptr, int len);
 #endif
 /* RX buffers are allocated from the heap */
 #define PBUF_RAM_RX PBUF_RAM
+/* The Wi-Fi driver sends asynchronously: it keeps a reference to the pbuf and reads the
+ * payload later, so data given to sendto() must be copied (ARMINO patched sockets.c for this) */
+#define LWIP_NETIF_TX_SINGLE_PBUF 1
+
 /* receive info of the Wi-Fi driver (rwnx_rx.c), after if_idx as in ARMINO's lwIP */
 #define LWIP_PBUF_CUSTOM_DATA void *extra;
 
