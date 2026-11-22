@@ -757,9 +757,11 @@
 #define LWIP_DHCP                       1
 
 /**
- * DHCP_DOES_ARP_CHECK==1: Do an ARP check on the offered address.
+ * LWIP_DHCP_DOES_ACD_CHECK==1: Perform address conflict detection on the dhcp address.
+ * lwIP 2.2.0 replaced DHCP_DOES_ARP_CHECK with ACD (RFC 5227), which delays every
+ * lease by 5-9 s; keep it off.
  */
-#define DHCP_DOES_ARP_CHECK             ((LWIP_DHCP) && (LWIP_ARP))
+#define LWIP_DHCP_DOES_ACD_CHECK        0
 
 /**
  * LWIP_DHCP_BOOTP_FILE==1: Store offered_si_addr and boot_file_name.
