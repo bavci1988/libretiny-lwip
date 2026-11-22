@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2003 Swedish Institute of Computer Science.
+ * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -29,32 +29,84 @@
  * Author: Adam Dunkels <adam@sics.se>
  *
  */
-#ifndef __SYS_RTXC_H__
-#define __SYS_RTXC_H__
+#ifndef __ARCH_SYS_ARCH_H__
+#define __ARCH_SYS_ARCH_H__
 
-#include <FreeRTOS.h>
-#include <queue.h>
-#include <semphr.h>
-#include <task.h>
+#include "lwip/opt.h"
 
-#define SYS_MBOX_NULL (xQueueHandle)0
-#define SYS_SEM_NULL  (xSemaphoreHandle)0
-#define SYS_DEFAULT_THREAD_STACK_DEPTH	configMINIMAL_STACK_SIZE
+#if (NO_SYS == 0)
+#include "kernel/os/os.h"
 
-typedef xSemaphoreHandle sys_sem_t;
-typedef xQueueHandle sys_mbox_t;
-typedef xTaskHandle sys_thread_t;
-typedef void * sys_mutex_t;
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
-typedef struct _sys_arch_state_t
-{
-	// Task creation data.
-	char cTaskName[configMAX_TASK_NAME_LEN];
-	unsigned short nStackDepth;
-	unsigned short nTaskCount;
-} sys_arch_state_t;
+/* mutex */
+#define LWIP_COMPAT_MUTEX   0
+typedef OS_Mutex_t sys_mutex_t;
+#define sys_mutex_valid(x)          OS_MutexIsValid(x)
+#define sys_mutex_set_invalid(x)    OS_MutexSetInvalid(x)
 
-/* Message queue constants. */
-#define archMESG_QUEUE_LENGTH	( 32 )
-#endif /* __SYS_RTXC_H__ */
+/* semaphore */
+typedef OS_Semaphore_t sys_sem_t;
+#define sys_sem_valid(x)            OS_SemaphoreIsValid(x)
+#define sys_sem_set_invalid(x)      OS_SemaphoreSetInvalid(x)
 
+/* mail box */
+#if LWIP_MBOX_TRACE
+typedef struct {
+  OS_Queue_t q;
+  u8_t avail;
+  u8_t used;
+  u8_t max;
+  u32_t err;
+} sys_mbox_t;
+#define sys_mbox_valid(x)           OS_QueueIsValid(&((x)->q))
+#define sys_mbox_set_invalid(x)     OS_QueueSetInvalid(&((x)->q))
+#else /* LWIP_MBOX_TRACE */
+typedef OS_Queue_t sys_mbox_t;
+#define sys_mbox_valid(x)           OS_QueueIsValid(x)
+#define sys_mbox_set_invalid(x)     OS_QueueSetInvalid(x)
+#endif /* LWIP_MBOX_TRACE */
+
+/* thread */
+typedef OS_Thread_t * sys_thread_t;
+
+/* sleep */
+#define sys_msleep(msec)            OS_MSleep(msec)
+
+/* Ticks/jiffies since power up. */
+#define sys_jiffies()               OS_GetTicks()
+
+#define SYS_ARCH_PROTECT_USE_MUTEX  0 /* system arch protection using mutex */
+
+/* protection */
+#if SYS_LIGHTWEIGHT_PROT
+#if SYS_ARCH_PROTECT_USE_MUTEX
+extern OS_Mutex_t g_lwip_sys_mutex;
+#define SYS_ARCH_DECL_PROTECT(lev)
+#define SYS_ARCH_PROTECT(lev)       OS_RecursiveMutexLock(&g_lwip_sys_mutex, OS_WAIT_FOREVER)
+#define SYS_ARCH_UNPROTECT(lev)     OS_RecursiveMutexUnlock(&g_lwip_sys_mutex)
+#else /* SYS_ARCH_PROTECT_USE_MUTEX */
+#define SYS_ARCH_DECL_PROTECT(lev)
+#define SYS_ARCH_PROTECT(lev)       OS_ThreadSuspendScheduler()
+#define SYS_ARCH_UNPROTECT(lev)     OS_ThreadResumeScheduler()
+#endif /* SYS_ARCH_PROTECT_USE_MUTEX */
+#else /* SYS_LIGHTWEIGHT_PROT */
+#define SYS_ARCH_DECL_PROTECT(lev)
+#define SYS_ARCH_PROTECT(lev)
+#define SYS_ARCH_UNPROTECT(lev)
+#endif /* SYS_LIGHTWEIGHT_PROT */
+
+#if LWIP_NETCONN_SEM_PER_THREAD
+sys_sem_t *LWIP_NETCONN_THREAD_SEM_GET();
+void LWIP_NETCONN_THREAD_SEM_ALLOC();
+void LWIP_NETCONN_THREAD_SEM_FREE();
+#endif
+
+#ifdef  __cplusplus
+}
+#endif
+
+#endif /* (NO_SYS == 0) */
+#endif /* __ARCH_SYS_ARCH_H__ */

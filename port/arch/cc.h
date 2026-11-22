@@ -1,110 +1,150 @@
 /*
- * cc.h       - Architecture environment, some compiler specific, some
- *             environment specific (probably should move env stuff 
- *             to sys_arch.h.)
+ * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
+ * All rights reserved.
  *
- * Typedefs for the types used by lwip -
- *   u8_t, s8_t, u16_t, s16_t, u32_t, s32_t, mem_ptr_t
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
  *
- * Compiler hints for packing lwip's structures -
- *   PACK_STRUCT_FIELD(x)
- *   PACK_STRUCT_STRUCT
- *   PACK_STRUCT_BEGIN
- *   PACK_STRUCT_END
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * Platform specific diagnostic output -
- *   LWIP_PLATFORM_DIAG(x)    - non-fatal, print a message.
- *   LWIP_PLATFORM_ASSERT(x)  - fatal, print message and abandon execution.
- *   Portability defines for printf formatters:
- *   U16_F, S16_F, X16_F, U32_F, S32_F, X32_F, SZT_F
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
  *
- * "lightweight" synchronization mechanisms -
- *   SYS_ARCH_DECL_PROTECT(x) - declare a protection state variable.
- *   SYS_ARCH_PROTECT(x)      - enter protection mode.
- *   SYS_ARCH_UNPROTECT(x)    - leave protection mode.
+ * This file is part of the lwIP TCP/IP stack.
  *
- * If the compiler does not provide memset() this file must include a
- * definition of it, or include a file which defines it.
+ * Author: Adam Dunkels <adam@sics.se>
  *
- * This file must either include a system-local <errno.h> which defines
- * the standard *nix error codes, or it should #define LWIP_PROVIDE_ERRNO
- * to make lwip/arch.h define the codes which are used throughout.
  */
- 
-#ifndef __CC_H__
-#define __CC_H__
+#ifndef __ARCH_CC_H__
+#define __ARCH_CC_H__
 
+#undef LITTLE_ENDIAN
+#undef BIG_ENDIAN
+
+/* Newlib must establish its fixed-width typedefs before GCC stdint.h.
+ * GCC 13 can otherwise select long for int32_t while Newlib uses int. */
+#include <sys/time.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
+#include "sys/defs.h"
 
-/*
- *   Typedefs for the types used by lwip -
- *   u8_t, s8_t, u16_t, s16_t, u32_t, s32_t, mem_ptr_t
- */
-typedef unsigned   char    u8_t;      /* Unsigned 8 bit quantity         */
-typedef signed     char    s8_t;      /* Signed    8 bit quantity        */
-typedef unsigned   short   u16_t;     /* Unsigned 16 bit quantity        */
-typedef signed     short   s16_t;     /* Signed   16 bit quantity        */
-typedef unsigned   long    u32_t;     /* Unsigned 32 bit quantity        */
-typedef signed     long    s32_t;     /* Signed   32 bit quantity        */
-//typedef unsigned   long    mem_ptr_t; /* Unsigned 32 bit quantity        */
-typedef int			       intptr_t;
-typedef unsigned int       uintptr_t;
-typedef int sys_prot_t;
+/* basic headers */
+#define LWIP_NO_STDDEF_H   0
+#define LWIP_NO_STDINT_H   0
+#define LWIP_NO_INTTYPES_H 1
+#define LWIP_NO_LIMITS_H   1
 
-
-
-#if defined(__GNUC__)
- #define PACK_STRUCT_BEGIN
- #define PACK_STRUCT_STRUCT __attribute__((packed))
- #define PACK_STRUCT_FIELD(x) x
-#elif defined(__ICCARM__)
- #define PACK_STRUCT_BEGIN __packed
- #define PACK_STRUCT_STRUCT
- #define PACK_STRUCT_FIELD(x) x
-#else
- #define PACK_STRUCT_BEGIN
- #define PACK_STRUCT_STRUCT
- #define PACK_STRUCT_FIELD(x) x
+#ifndef INT_MAX
+#define INT_MAX     0x7FFFFFFF
 #endif
 
-
-/*
- *  Platform specific diagnostic output -
- *   LWIP_PLATFORM_DIAG(x)    - non-fatal, print a message.
- *   LWIP_PLATFORM_ASSERT(x)  - fatal, print message and abandon execution.
- *   Portability defines for printf formatters:
- *   U16_F, S16_F, X16_F, U32_F, S32_F, X32_F, SZT_F
- */
-#ifndef LWIP_PLATFORM_ASSERT
-#define LWIP_PLATFORM_ASSERT(x) \
-    do \
-    {   printf("Assertion \"%s\" failed at line %d in %s\n", x, __LINE__, __FILE__); \
-    } while(0)
+#if 0
+/* Types based on stdint.h */
+typedef uint8_t         u8_t;
+typedef int8_t          s8_t;
+typedef uint16_t        u16_t;
+typedef int16_t         s16_t;
+typedef uint32_t        u32_t;
+typedef int32_t         s32_t;
+typedef uintptr_t       mem_ptr_t;
 #endif
 
-#ifndef LWIP_PLATFORM_DIAG
-#define LWIP_PLATFORM_DIAG(x) do {printf x ;} while(0)
-#endif 
- 
-#define U16_F "4d"
-#define S16_F "4d"
-#define X16_F "4x"
-#define U32_F "8ld"
-#define S32_F "8ld"
-#define X32_F "8lx"
+/* Define (sn)printf formatters for these lwIP types */
+#define X8_F  "02x"
+#define U16_F "hu"
+#define S16_F "hd"
+#define X16_F "hx"
+#define U32_F "u"
+#define S32_F "d"
+#define X32_F "x"
+#define SZT_F "u"
 
-/*
- * unknow defination
- */
-// cup byte order 
+/* Define platform endianness */
 #ifndef BYTE_ORDER
-#define BYTE_ORDER          LITTLE_ENDIAN
+#define BYTE_ORDER LITTLE_ENDIAN
+#endif /* BYTE_ORDER */
+
+/* Not use LWIP error codes */
+//#define LWIP_PROVIDE_ERRNO
+//#define LWIP_ERRNO_INCLUDE <errno.h>
+#include <errno.h>
+#define set_errno(err) OS_SetErrno(err)
+
+/* Use private struct timeval */
+#define LWIP_TIMEVAL_PRIVATE    0
+#if (!LWIP_TIMEVAL_PRIVATE)
+#include <sys/time.h>
 #endif
 
-extern int bk_rand();		/* FIXME: move to right place */
-
-#define LWIP_RAND()        ((uint32_t)bk_rand())
+#if (defined(__GNUC__))
+    /* GNU Compiler */
+    #define PACK_STRUCT_BEGIN
+    #define PACK_STRUCT_STRUCT __attribute__((__packed__))
+    #define PACK_STRUCT_END
+    #define PACK_STRUCT_FIELD(fld) fld
+    #define ALIGNED(n) __attribute__((aligned (n)))
+#elif defined(__CC_ARM)
+    /* ARM Compiler */
+    #define PACK_STRUCT_BEGIN __packed
+    #define PACK_STRUCT_STRUCT
+    #define PACK_STRUCT_END
+    #define PACK_STRUCT_FIELD(fld) fld
+    #define ALIGNED(n) __align(n)
+#else
+    #error "Compiler not supported."
 #endif
-// eof
 
+#include <string.h>
+#define MEMCPY(dst,src,len) 	memcpy(dst,src,len)
+#define SMEMCPY(dst,src,len)	memcpy(dst,src,len)
+#if defined(__GNUC__) && defined(__thumb2__)
+    /* Provide Thumb-2 routines for GCC to improve performance */
+    #define LWIP_CHKSUM             thumb2_checksum
+    /* Set algorithm to 0 so that unused lwip_standard_chksum function
+       doesn't generate compiler warning */
+    #define LWIP_CHKSUM_ALGORITHM   0
+
+    uint16_t thumb2_checksum(const void* pData, int length);
+#else
+    /* Used with IP headers only */
+    #define LWIP_CHKSUM_ALGORITHM   1
+#endif
+
+/* Debug on/off */
+//#define LWIP_DEBUG
+//#define LWIP_NOASSERT
+
+#include <stdio.h>
+/* Plaform specific diagnostic output */
+#define LWIP_PLATFORM_DIAG(x)   do {printf x;} while(0)
+#define LWIP_PLATFORM_ASSERT(x)                                 \
+    do {                                                        \
+        printf("%s at line %d in %s\n", x, __LINE__, __FILE__); \
+    } while(0)
+
+#include "kernel/os/os_time.h"
+#define LWIP_RAND()                 OS_Rand32()
+
+#include "sys/endian.h"
+#define LWIP_PLATFORM_BYTESWAP      1
+#define LWIP_PLATFORM_HTONS(x)      htobe16(x)  //__REV16(x)
+#define LWIP_PLATFORM_HTONL(x)      htobe32(x)  //__REV(x)
+
+#include "compiler.h"
+#define LWIP_INLINE	__inline
+
+#endif /* __ARCH_CC_H__ */

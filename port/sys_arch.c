@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2003 Swedish Institute of Computer Science.
+ * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -29,473 +29,392 @@
  * Author: Adam Dunkels <adam@sics.se>
  *
  */
-
-#include "typedef.h"
-#include "sys_rtos.h"
-#include "rtos_pub.h"
-/* lwIP includes. */
+#include <stdlib.h>
+#include <string.h>
+#include "lwip/opt.h"
 #include "lwip/debug.h"
-#include "lwip/def.h"
 #include "lwip/sys.h"
-#include "lwip/mem.h"
 #include "lwip/stats.h"
-#include "lwip/timeouts.h"
-#include "portmacro.h"
+#include "sys/list.h"
 
-#define CFG_ENABLE_LWIP_MUTEX      1
+#include "arch/sys_arch.h"
 
-#if CFG_ENABLE_LWIP_MUTEX
-static sys_mutex_t sys_arch_mutex;
+#if LWIP_RESOURCE_TRACE
+int g_lwip_mutex_cnt = 0;
+int g_lwip_sem_cnt = 0;
+int g_lwip_mbox_cnt = 0;
 #endif
 
-/*-----------------------------------------------------------------------------------*/
-err_t sys_mbox_new(sys_mbox_t *mbox, int size)
+#if (NO_SYS == 0)
+
+#if !LWIP_COMPAT_MUTEX
+/** Create a new mutex
+ * @param mutex pointer to the mutex to create
+ * @return a new mutex */
+err_t sys_mutex_new(sys_mutex_t *mutex)
 {
-	(void ) size;
-	
-	if (size > 0)
-		*mbox = xQueueCreate( size, sizeof( void * ) );
-	else
-		*mbox = xQueueCreate( archMESG_QUEUE_LENGTH, sizeof( void * ) );
-
-#if SYS_STATS
-      ++lwip_stats.sys.mbox.used;
-      if (lwip_stats.sys.mbox.max < lwip_stats.sys.mbox.used) {
-         lwip_stats.sys.mbox.max = lwip_stats.sys.mbox.used;
-	  }
-#endif /* SYS_STATS */
-
-    if (*mbox == NULL)
-        return ERR_MEM;
-
-    return ERR_OK;
-}
-
-/*-----------------------------------------------------------------------------------*/
-/*
-  Deallocates a mailbox. If there are messages still present in the
-  mailbox when the mailbox is deallocated, it is an indication of a
-  programming error in lwIP and the developer should be notified.
-*/
-void sys_mbox_free(sys_mbox_t *mbox)
-{
-	if( uxQueueMessagesWaiting( *mbox ) )
-	{
-		/* Line for breakpoint.  Should never break here! */
-		portNOP();
-#if SYS_STATS
-	    lwip_stats.sys.mbox.err++;
-#endif /* SYS_STATS */
-			
-		// TODO notify the user of failure.
-	}
-
-	vQueueDelete( *mbox );
-
-#if SYS_STATS
-     --lwip_stats.sys.mbox.used;
-#endif /* SYS_STATS */
-}
-
-/*-----------------------------------------------------------------------------------*/
-//   Posts the "msg" to the mailbox.
-void sys_mbox_post(sys_mbox_t *mbox, void *data)
-{
-	while ( xQueueSendToBack(*mbox, &data, portMAX_DELAY ) != pdTRUE ){}
-}
-
-
-/*-----------------------------------------------------------------------------------*/
-//   Try to post the "msg" to the mailbox.
-err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)
-{
-err_t result;
-
-   if ( xQueueSend( *mbox, &msg, 0 ) == pdPASS )
-   {
-      result = ERR_OK;
-   }
-   else {
-      // could not post, queue must be full
-      result = ERR_MEM;
-			
-#if SYS_STATS
-      lwip_stats.sys.mbox.err++;
-#endif /* SYS_STATS */
-			
-   }
-
-   return result;
-}
-
-/*-----------------------------------------------------------------------------------*/
-/*
-  Blocks the thread until a message arrives in the mailbox, but does
-  not block the thread longer than "timeout" milliseconds (similar to
-  the sys_arch_sem_wait() function). The "msg" argument is a result
-  parameter that is set by the function (i.e., by doing "*msg =
-  ptr"). The "msg" parameter maybe NULL to indicate that the message
-  should be dropped.
-
-  The return values are the same as for the sys_arch_sem_wait() function:
-  Number of milliseconds spent waiting or SYS_ARCH_TIMEOUT if there was a
-  timeout.
-
-  Note that a function with a similar name, sys_mbox_fetch(), is
-  implemented by lwIP.
-*/
-u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
-{
-void *dummyptr;
-portTickType StartTime, EndTime, Elapsed;
-
-	StartTime = xTaskGetTickCount();
-
-	if ( msg == NULL )
-	{
-		msg = &dummyptr;
-	}
-		
-	if ( timeout != 0 )
-	{
-		if ( pdTRUE == xQueueReceive( *mbox, &(*msg), timeout / portTICK_RATE_MS ) )
-		{
-			EndTime = xTaskGetTickCount();
-			Elapsed = (EndTime - StartTime) * portTICK_RATE_MS;
-			
-			return ( Elapsed );
-		}
-		else // timed out blocking for message
-		{
-			*msg = NULL;
-			
-			return SYS_ARCH_TIMEOUT;
-		}
-	}
-	else // block forever for a message.
-	{
-		while( pdTRUE != xQueueReceive( *mbox, &(*msg), portMAX_DELAY ) ){} // time is arbitrary
-		EndTime = xTaskGetTickCount();
-		Elapsed = (EndTime - StartTime) * portTICK_RATE_MS;
-		
-		return ( Elapsed ); // return time blocked TODO test	
-	}
-}
-
-/*-----------------------------------------------------------------------------------*/
-/*
-  Similar to sys_arch_mbox_fetch, but if message is not ready immediately, we'll
-  return with SYS_MBOX_EMPTY.  On success, 0 is returned.
-*/
-u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
-{
-void *dummyptr;
-
-	if ( msg == NULL )
-	{
-		msg = &dummyptr;
-	}
-
-   if ( pdTRUE == xQueueReceive( *mbox, &(*msg), 0 ) )
-   {
-      return ERR_OK;
-   }
-   else
-   {
-      return SYS_MBOX_EMPTY;
-   }
-}
-/*----------------------------------------------------------------------------------*/
-int sys_mbox_valid(sys_mbox_t *mbox)          
-{      
-  if (*mbox == SYS_MBOX_NULL) 
-    return 0;
-  else
-    return 1;
-}                                             
-/*-----------------------------------------------------------------------------------*/                                              
-void sys_mbox_set_invalid(sys_mbox_t *mbox)   
-{                                             
-  *mbox = SYS_MBOX_NULL;                      
-}                                             
-
-/*-----------------------------------------------------------------------------------*/
-//  Creates a new semaphore. The "count" argument specifies
-//  the initial state of the semaphore.
-err_t sys_sem_new(sys_sem_t *sem, u8_t count)
-{
-	vSemaphoreCreateBinary(*sem );
-	if(*sem == NULL)
-	{
-		
-#if SYS_STATS
-      ++lwip_stats.sys.sem.err;
-#endif /* SYS_STATS */	
-		return ERR_MEM;
-	}
-	
-	if(count == 0)	// Means it can't be taken
-	{
-		xSemaphoreTake(*sem,1);
-	}
-
-#if SYS_STATS
-	++lwip_stats.sys.sem.used;
- 	if (lwip_stats.sys.sem.max < lwip_stats.sys.sem.used) {
-		lwip_stats.sys.sem.max = lwip_stats.sys.sem.used;
-	}
-#endif /* SYS_STATS */
-		
-	return ERR_OK;
-}
-
-/*-----------------------------------------------------------------------------------*/
-/*
-  Blocks the thread while waiting for the semaphore to be
-  signaled. If the "timeout" argument is non-zero, the thread should
-  only be blocked for the specified time (measured in
-  milliseconds).
-
-  If the timeout argument is non-zero, the return value is the number of
-  milliseconds spent waiting for the semaphore to be signaled. If the
-  semaphore wasn't signaled within the specified time, the return value is
-  SYS_ARCH_TIMEOUT. If the thread didn't have to wait for the semaphore
-  (i.e., it was already signaled), the function may return zero.
-
-  Notice that lwIP implements a function with a similar name,
-  sys_sem_wait(), that uses the sys_arch_sem_wait() function.
-*/
-u32_t sys_arch_sem_wait(sys_sem_t *sem, u32_t timeout)
-{
-	portTickType StartTime, EndTime, Elapsed;
-
-	StartTime = xTaskGetTickCount();
-
-	if(	timeout != 0)
-	{
-		if( xSemaphoreTake( *sem, timeout / portTICK_RATE_MS ) == pdTRUE )
-		{
-			EndTime = xTaskGetTickCount();
-			Elapsed = (EndTime - StartTime) * portTICK_RATE_MS;
-			
-			return (Elapsed); // return time blocked TODO test	
-		}
-		else
-		{
-			return SYS_ARCH_TIMEOUT;
-		}
-	}
-	else // must block without a timeout
-	{
-		while( xSemaphoreTake( *sem, portMAX_DELAY) != pdTRUE)
-		{
-			;
-		}
-		
-		EndTime = xTaskGetTickCount();
-		Elapsed = (EndTime - StartTime) * portTICK_RATE_MS;
-
-		return ( Elapsed ); // return time blocked	
-	}
-}
-
-/*-----------------------------------------------------------------------------------*/
-// Signals a semaphore
-void sys_sem_signal(sys_sem_t *sem)
-{
-	xSemaphoreGive(*sem);
-}
-
-/*-----------------------------------------------------------------------------------*/
-// Deallocates a semaphore
-void sys_sem_free(sys_sem_t *sem)
-{
-#if SYS_STATS
-      --lwip_stats.sys.sem.used;
-#endif /* SYS_STATS */
-			
-	vQueueDelete(*sem);
-}
-/*-----------------------------------------------------------------------------------*/
-int sys_sem_valid(sys_sem_t *sem)                                               
-{
-  if (*sem == SYS_SEM_NULL)
-    return 0;
-  else
-    return 1;                                       
-}
-
-/*-----------------------------------------------------------------------------------*/                                                                                                                                                                
-void sys_sem_set_invalid(sys_sem_t *sem)                                        
-{                                                                               
-  *sem = SYS_SEM_NULL;                                                          
-} 
-
-/*-----------------------------------------------------------------------------------*/        
-err_t sys_mutex_trylock(sys_mutex_t *pxMutex)
-{
-	if (xSemaphoreTake(*pxMutex, 0) == pdPASS) 
-		return 0;
-	else 
-		return -1;
-}
-
-/*-----------------------------------------------------------------------------------*/
-// Initialize sys arch
-void sys_init(void)
-{
-#if CFG_ENABLE_LWIP_MUTEX
-	sys_mutex_new(&sys_arch_mutex);
+#if LWIP_RESOURCE_TRACE
+	g_lwip_mutex_cnt++;
 #endif
-}
-
-/*-----------------------------------------------------------------------------------*/
-                                      /* Mutexes*/
-/*-----------------------------------------------------------------------------------*/
-/*-----------------------------------------------------------------------------------*/
-/* Create a new mutex*/
-err_t sys_mutex_new(sys_mutex_t *mutex) {
-	*mutex = xSemaphoreCreateMutex();
-	if(*mutex == NULL)
-	{
-#if SYS_STATS
-      ++lwip_stats.sys.mutex.err;
-#endif /* SYS_STATS */	
+	err_t err = OS_MutexCreate(mutex);
+	if (err == OS_OK) {
+		SYS_STATS_INC_USED(mutex);
+		return ERR_OK;
+	} else {
+		SYS_STATS_INC(mutex.err);
 		return ERR_MEM;
 	}
-
-#if SYS_STATS
-	++lwip_stats.sys.mutex.used;
- 	if (lwip_stats.sys.mutex.max < lwip_stats.sys.mutex.used) {
-		lwip_stats.sys.mutex.max = lwip_stats.sys.mutex.used;
-	}
-#endif /* SYS_STATS */
-
-        return ERR_OK;
 }
-/*-----------------------------------------------------------------------------------*/
-/* Deallocate a mutex*/
-void sys_mutex_free(sys_mutex_t *mutex)
-{
-#if SYS_STATS
-      --lwip_stats.sys.mutex.used;
-#endif /* SYS_STATS */
-			
-	vQueueDelete(*mutex);
-}
-/*-----------------------------------------------------------------------------------*/
-/* Lock a mutex*/
+
+/** Lock a mutex
+ * @param mutex the mutex to lock */
 void sys_mutex_lock(sys_mutex_t *mutex)
 {
-	sys_arch_sem_wait(mutex, BEKEN_WAIT_FOREVER);
+	OS_MutexLock(mutex, OS_WAIT_FOREVER);
 }
 
-/*-----------------------------------------------------------------------------------*/
-/* Unlock a mutex*/
+/** Unlock a mutex
+ * @param mutex the mutex to unlock */
 void sys_mutex_unlock(sys_mutex_t *mutex)
 {
-	xSemaphoreGive(*mutex);
+	OS_MutexUnlock(mutex);
 }
 
-/*-----------------------------------------------------------------------------------*/
-// TODO
-/*-----------------------------------------------------------------------------------*/
-/*
-  Starts a new thread with priority "prio" that will begin its execution in the
-  function "thread()". The "arg" argument will be passed as an argument to the
-  thread() function. The id of the new thread is returned. Both the id and
-  the priority are system dependent.
-*/
-sys_thread_t sys_thread_new(const char *name, lwip_thread_fn thread , void *arg, int stacksize, int prio)
+/** Delete a semaphore
+ * @param mutex the mutex to delete */
+void sys_mutex_free(sys_mutex_t *mutex)
 {
-	xTaskHandle CreatedTask;
-	int result;
-   
-	result = xTaskCreate( thread, ( portCHAR * ) name, stacksize, arg, prio, &CreatedTask );
-	if(result == pdPASS)
-	{
-	   return CreatedTask;
+	if (OS_MutexDelete(mutex) == OS_OK) {
+		SYS_STATS_DEC(mutex.used);
+	} else {
+		LWIP_ERROR("sys_mutex_free: failed", 0, while(1));
+		SYS_STATS_INC(mutex.err);
 	}
-	else
-	{
-	   return NULL;
+#if LWIP_RESOURCE_TRACE
+	g_lwip_mutex_cnt--;
+#endif
+}
+#endif /* LWIP_COMPAT_MUTEX */
+
+/** Create a new semaphore
+ * @param sem pointer to the semaphore to create
+ * @param count initial count of the semaphore
+ * @return ERR_OK if successful, another err_t otherwise */
+err_t sys_sem_new(sys_sem_t *sem, u8_t count)
+{
+#if LWIP_RESOURCE_TRACE
+	g_lwip_sem_cnt++;
+#endif
+	err_t err = OS_SemaphoreCreate(sem, count, OS_SEMAPHORE_MAX_COUNT);
+	if (err == OS_OK) {
+		SYS_STATS_INC_USED(sem);
+		return ERR_OK;
+	} else {
+		SYS_STATS_INC(sem.err);
+		return ERR_MEM;
 	}
 }
 
-int sys_thread_delete(xTaskHandle pid)
+/** Signals a semaphore
+ * @param sem the semaphore to signal */
+void sys_sem_signal(sys_sem_t *sem)
 {
-	return pdPASS;
+	OS_SemaphoreRelease(sem);
 }
 
-/*
-  This optional function does a "fast" critical region protection and returns
-  the previous protection level. This function is only called during very short
-  critical regions. An embedded system which supports ISR-based drivers might
-  want to implement this function by disabling interrupts. Task-based systems
-  might want to implement this by using a mutex or disabling tasking. This
-  function should support recursive calls from the same task or interrupt. In
-  other words, sys_arch_protect() could be called while already protected. In
-  that case the return value indicates that it is already protected.
+/** Wait for a semaphore for the specified timeout
+ * @param sem the semaphore to wait for
+ * @param timeout timeout in milliseconds to wait (0 = wait forever)
+ * @return time (in milliseconds) waited for the semaphore
+ *         or SYS_ARCH_TIMEOUT on timeout */
+u32_t sys_arch_sem_wait(sys_sem_t *sem, u32_t timeout)
+{
+	u32_t start_ticks = OS_GetTicks();
+	if (OS_SemaphoreWait(sem, timeout == 0 ? OS_WAIT_FOREVER : timeout) != OS_OK)
+		return SYS_ARCH_TIMEOUT;
 
-  sys_arch_protect() is only required if your port is supporting an operating
-  system.
-*/
-sys_prot_t sys_arch_protect(void)
-{	
-#if CFG_ENABLE_LWIP_MUTEX
-	sys_mutex_lock(&sys_arch_mutex);
-
-	return 0;
-#else
-	return port_disable_interrupts_flag();
-#endif	
+	return OS_TicksToMSecs(OS_GetTicks() - start_ticks);
 }
 
-/*
-  This optional function does a "fast" set of critical region protection to the
-  value specified by pval. See the documentation for sys_arch_protect() for
-  more information. This function is only required if your port is supporting
-  an operating system.
-*/
-void sys_arch_unprotect(sys_prot_t pval)
+/** Delete a semaphore
+ * @param sem semaphore to delete */
+void sys_sem_free(sys_sem_t *sem)
 {
-#if CFG_ENABLE_LWIP_MUTEX
-	(void)pval;
-	sys_mutex_unlock(&sys_arch_mutex);
-#else
-	port_enable_interrupts_flag(pval);
+	if (OS_SemaphoreDelete(sem) == OS_OK) {
+		SYS_STATS_DEC(sem.used);
+	} else {
+		LWIP_ERROR("sys_sem_free: failed", 0, while(1));
+		SYS_STATS_INC(sem.err);
+	}
+#if LWIP_RESOURCE_TRACE
+	g_lwip_sem_cnt--;
 #endif
 }
 
-/*
- * Prints an assertion messages and aborts execution.
- */
-void sys_assert( const char *msg )
-{	
-	(void) msg;
-	
-	/*FSL:only needed for debugging*/
-	printf(msg);
-	printf("\n\r");		
-    vPortEnterCritical();
-	
-    for(;;)
-    ;
+#if LWIP_MBOX_TRACE
+#define MBOX2Q(m)		(&((m)->q))
+#define MBOX_INC_USED(m)							\
+	do {									\
+		if (++(m)->used > (m)->max) {					\
+			(m)->max = (m)->used;					\
+			LWIP_PLATFORM_DIAG(("mbox %p, avail %u, max %u\n",	\
+				(m), (m)->avail, (m)->max));			\
+		}								\
+	} while (0)
+#define MBOX_DEC_USED(m)	do { --(m)->used; } while (0)
+#define MBOX_INC_ERR(m)		do { ++(m)->err; } while (0)
+#else /* LWIP_MBOX_TRACE */
+#define MBOX2Q(m)		(m)
+#define MBOX_INC_USED(m)	do { } while (0)
+#define MBOX_DEC_USED(m)	do { } while (0)
+#define MBOX_INC_ERR(m)		do { } while (0)
+#endif /* LWIP_MBOX_TRACE */
+
+/** Create a new mbox of specified size
+ * @param mbox pointer to the mbox to create
+ * @param size (miminum) number of messages in this mbox
+ * @return ERR_OK if successful, another err_t otherwise */
+err_t sys_mbox_new(sys_mbox_t *mbox, int size)
+{
+#if LWIP_RESOURCE_TRACE
+	g_lwip_mbox_cnt++;
+#endif
+	err_t err = OS_MsgQueueCreate(MBOX2Q(mbox), size);
+	if (err == OS_OK) {
+		SYS_STATS_INC_USED(mbox);
+#if LWIP_MBOX_TRACE
+		mbox->avail = size;
+		mbox->used = 0;
+		mbox->max = 0;
+		mbox->err = 0;
+#endif
+		return ERR_OK;
+	} else {
+		SYS_STATS_INC(mbox.err);
+		return ERR_MEM;
+	}
 }
 
+/** Post a message to an mbox - may not fail
+ * -> blocks if full, only used from tasks not from ISR
+ * @param mbox mbox to posts the message
+ * @param msg message to post (ATTENTION: can be NULL) */
+void sys_mbox_post(sys_mbox_t *mbox, void *msg)
+{
+	OS_MsgQueueSend(MBOX2Q(mbox), msg, OS_WAIT_FOREVER);
+	MBOX_INC_USED(mbox);
+}
+
+/** Try to post a message to an mbox - may fail if full or ISR
+ * @param mbox mbox to posts the message
+ * @param msg message to post (ATTENTION: can be NULL) */
+err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)
+{
+	err_t err = OS_MsgQueueSend(MBOX2Q(mbox), msg, 0);
+	if (err == OS_OK) {
+		MBOX_INC_USED(mbox);
+		return ERR_OK;
+	} else {
+		MBOX_INC_ERR(mbox);
+		return ERR_TIMEOUT;
+	}
+}
+
+/** Wait for a new message to arrive in the mbox
+ * @param mbox mbox to get a message from
+ * @param msg pointer where the message is stored
+ * @param timeout maximum time (in milliseconds) to wait for a message
+ * @return time (in milliseconds) waited for a message, may be 0 if not waited
+ *         or SYS_ARCH_TIMEOUT on timeout
+ *         The returned time has to be accurate to prevent timer jitter! */
+u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
+{
+	u32_t start_ticks = OS_GetTicks();
+	if (OS_MsgQueueReceive(MBOX2Q(mbox), msg, timeout == 0 ? OS_WAIT_FOREVER : timeout) != OS_OK)
+		return SYS_ARCH_TIMEOUT;
+
+	MBOX_DEC_USED(mbox);
+	return OS_TicksToMSecs(OS_GetTicks() - start_ticks);
+}
+
+/** Try to wait for a new message to arrive in the mbox
+ * @param mbox mbox to get a message from
+ * @param msg pointer where the message is stored
+ * @return 0 (milliseconds) if a message has been received
+ *         or SYS_MBOX_EMPTY if the mailbox is empty */
+u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
+{
+	if (OS_MsgQueueReceive(MBOX2Q(mbox), msg, 0) != OS_OK) {
+		return SYS_MBOX_EMPTY;
+	} else {
+		MBOX_DEC_USED(mbox);
+		return 0;
+	}
+}
+
+/** Delete an mbox
+ * @param mbox mbox to delete */
+void sys_mbox_free(sys_mbox_t *mbox)
+{
+#if LWIP_MBOX_TRACE
+	LWIP_PLATFORM_DIAG(("free mbox %p, avail %u, used %u, max %u, err %u\n",
+		mbox, mbox->avail, mbox->used, mbox->max, mbox->err));
+#endif
+	if (OS_MsgQueueDelete(MBOX2Q(mbox)) == OS_OK) {
+		SYS_STATS_DEC(mbox.used);
+	} else {
+		LWIP_ERROR("sys_mbox_free: mbox not empty", 0, while(1));
+		SYS_STATS_INC(mbox.err);
+	}
+#if LWIP_RESOURCE_TRACE
+	g_lwip_mbox_cnt--;
+#endif
+}
+
+/* Support only one tcpip thread to save space */
+static OS_Thread_t g_lwip_tcpip_thread;
+
+/** The only thread function:
+ * Creates a new thread
+ * @param name human-readable name for the thread (used for debugging purposes)
+ * @param thread thread-function
+ * @param arg parameter passed to 'thread'
+ * @param stacksize stack size in bytes for the new thread (may be ignored by ports)
+ * @param prio priority of the new thread (may be ignored by ports) */
+sys_thread_t sys_thread_new(const char *name, lwip_thread_fn thread, void *arg, int stacksize, int prio)
+{
+	if (OS_ThreadIsValid(&g_lwip_tcpip_thread))
+		return NULL;
+
+	if (OS_ThreadCreate(&g_lwip_tcpip_thread, name, thread, arg, prio, stacksize) != OS_OK) {
+		return NULL;
+	}
+	return &g_lwip_tcpip_thread;
+}
+
+#if LWIP_XR_DEINIT
+
+/** Thread terminate itself */
+void sys_thread_exit(const char *name)
+{
+	OS_ThreadDelete(&g_lwip_tcpip_thread);
+}
+
+/** Free a thread, or wait for thread termination */
+void sys_thread_free(const char *name)
+{
+	while (OS_ThreadIsValid(&g_lwip_tcpip_thread)) {
+		OS_MSleep(1); /* wait for thread termination */
+	}
+}
+#endif /* */
+
+#endif /* (NO_SYS == 0) */
+
+#if (SYS_LIGHTWEIGHT_PROT && SYS_ARCH_PROTECT_USE_MUTEX)
+/** mutex for SYS_ARCH_PROTECT */
+OS_Mutex_t g_lwip_sys_mutex;
+#endif
+
+/** sys_init() must be called before anthing else. */
+void sys_init(void)
+{
+#if (SYS_LIGHTWEIGHT_PROT && SYS_ARCH_PROTECT_USE_MUTEX)
+	OS_RecursiveMutexCreate(&g_lwip_sys_mutex);
+#endif
+}
+
+#if LWIP_XR_DEINIT
+/** sys_deinit() must be called after anthing else. */
+void sys_deinit(void)
+{
+#if (SYS_LIGHTWEIGHT_PROT && SYS_ARCH_PROTECT_USE_MUTEX)
+	OS_RecursiveMutexDelete(&g_lwip_sys_mutex);
+#endif
+}
+#endif /* LWIP_XR_DEINIT */
+
+/** Returns the current time in milliseconds,
+ * may be the same as sys_jiffies or at least based on it. */
 u32_t sys_now(void)
 {
-	return xTaskGetTickCount() * portTICK_RATE_MS;
+	return OS_TicksToMSecs(OS_GetTicks());
 }
 
-u32_t sys_jiffies(void)
+#if LWIP_RESOURCE_TRACE
+extern int g_lwip_socket_cnt;
+
+void lwip_resource_info(void)
 {
-	return xTaskGetTickCount() * portTICK_RATE_MS;
+	LWIP_PLATFORM_DIAG(("<<< lwip resource info >>>\n"));
+	LWIP_PLATFORM_DIAG(("g_lwip_socket_cnt %d\n", g_lwip_socket_cnt));
+	LWIP_PLATFORM_DIAG(("g_lwip_mutex_cnt  %d\n", g_lwip_mutex_cnt));
+	LWIP_PLATFORM_DIAG(("g_lwip_sem_cnt    %d\n", g_lwip_sem_cnt));
+	LWIP_PLATFORM_DIAG(("g_lwip_mbox_cnt   %d\n", g_lwip_mbox_cnt));
+}
+#endif /* LWIP_RESOURCE_TRACE */
+
+#if LWIP_NETCONN_SEM_PER_THREAD
+static LIST_HEAD_DEF(g_lwip_thread_sem_list);
+
+typedef struct {
+	OS_ThreadHandle_t thread;
+	sys_sem_t sem;
+	struct list_head list;
+}xr_lwip_sem_t;
+
+sys_sem_t *LWIP_NETCONN_THREAD_SEM_GET()
+{
+	struct list_head *pos;
+	struct list_head *n;
+	xr_lwip_sem_t *item = NULL;
+	OS_ThreadHandle_t thread = OS_ThreadGetCurrentHandle();
+
+	list_for_each_safe(pos, n, &g_lwip_thread_sem_list) {
+		item = list_entry(pos, xr_lwip_sem_t, list);
+		if(item->thread == thread) {
+			return &item->sem;
+		}
+	}
+	return NULL;
 }
 
-void sys_arch_msleep(int ms)
+void LWIP_NETCONN_THREAD_SEM_ALLOC()
 {
-	vTaskDelay(ms / portTICK_RATE_MS);
+	err_t err;
+	xr_lwip_sem_t *xr_sem;
+
+	xr_sem = malloc(sizeof(xr_lwip_sem_t));
+	if (xr_sem == NULL) {
+		return;
+	}
+	memset(xr_sem, 0, sizeof(xr_lwip_sem_t));
+	xr_sem->thread = OS_ThreadGetCurrentHandle();
+	err = sys_sem_new(&xr_sem->sem, 0);
+	if (err != ERR_OK) {
+		free(xr_sem);
+		return;
+	}
+	list_add(&xr_sem->list, &g_lwip_thread_sem_list);
 }
-// eof
+
+void LWIP_NETCONN_THREAD_SEM_FREE()
+{
+	struct list_head *pos;
+	struct list_head *n;
+	xr_lwip_sem_t *item = NULL;
+	OS_ThreadHandle_t thread = OS_ThreadGetCurrentHandle();
+
+	list_for_each_safe(pos, n, &g_lwip_thread_sem_list) {
+		item = list_entry(pos, xr_lwip_sem_t, list);
+		if(item->thread == thread) {
+			list_del(pos);
+			sys_sem_free(&item->sem);
+			free(item);
+			break;
+		}
+	}
+}
+
+#endif /* LWIP_NETCONN_SEM_PER_THREAD */
 
