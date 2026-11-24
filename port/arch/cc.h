@@ -81,8 +81,8 @@ typedef uintptr_t       mem_ptr_t;
 /* Not use LWIP error codes */
 //#define LWIP_PROVIDE_ERRNO
 //#define LWIP_ERRNO_INCLUDE <errno.h>
+/* lwIP sets the errno that LibreTiny and its applications read (fixups/errno.h) */
 #include <errno.h>
-#define set_errno(err) OS_SetErrno(err)
 
 /* Use private struct timeval */
 #define LWIP_TIMEVAL_PRIVATE    0
